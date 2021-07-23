@@ -111,6 +111,8 @@ void DeInitializeGL(HGLRC hRC, HDC hdc)
 
 struct CustomData
 {
+	HMODULE hOpenGL;
+
 	PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB;
 	PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB;
 
@@ -178,14 +180,14 @@ static BOOL InitializeGLFunctions(struct CustomData* customData)
 	{
 		.nSize = sizeof(PIXELFORMATDESCRIPTOR),
 		.nVersion = 1,
-		.dwFlags = PFD_DRAW_TO_BITMAP | PFD_SUPPORT_GDI | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
+		.dwFlags = PFD_DRAW_TO_WINDOW | PFD_DRAW_TO_BITMAP | PFD_SUPPORT_OPENGL | PFD_GENERIC_ACCELERATED | PFD_DOUBLEBUFFER | PFD_SWAP_LAYER_BUFFERS,
 		.iPixelType = PFD_TYPE_RGBA,
 		.cColorBits = 32,
-		.cRedBits = 0,
+		.cRedBits = 8,
 		.cRedShift = 0,
-		.cGreenBits = 0,
+		.cGreenBits = 8,
 		.cGreenShift = 0,
-		.cBlueBits = 0,
+		.cBlueBits = 8,
 		.cBlueShift = 0,
 		.cAlphaBits = 8,
 		.cAlphaShift = 0,
@@ -194,8 +196,8 @@ static BOOL InitializeGLFunctions(struct CustomData* customData)
 		.cAccumGreenBits = 0,
 		.cAccumBlueBits = 0,
 		.cAccumAlphaBits = 0,
-		.cDepthBits = 24,
-		.cStencilBits = 0,
+		.cDepthBits = 32,
+		.cStencilBits = 8,
 		.cAuxBuffers = 0,
 		.iLayerType = PFD_MAIN_PLANE,
 		.bReserved = 0,
@@ -218,10 +220,12 @@ static BOOL InitializeGLFunctions(struct CustomData* customData)
 		.lpszClassName = TEXT("FAKE"),
 		.hIconSm = NULL
 	};
-	HWND fakeWnd = CreateWindow(wndClassEx.lpszClassName, wndClassEx.lpszClassName, WS_CLIPSIBLINGS | WS_CLIPCHILDREN, 0, 0, 1, 1, NULL, NULL, HINST_THISCOMPONENT, NULL);
+	RegisterClassEx(&wndClassEx);
+
+	HWND fakeWnd = CreateWindowEx(WS_EX_OVERLAPPEDWINDOW, wndClassEx.lpszClassName, wndClassEx.lpszClassName, WS_OVERLAPPEDWINDOW, 0, 0, 100, 100, NULL, NULL, HINST_THISCOMPONENT, NULL);
 	HDC fakeDC = GetDC(fakeWnd);
 
-	RegisterClassEx(&wndClassEx);
+	//ShowWindow(fakeWnd, SW_SHOW);
 
 	int fakePFDID = ChoosePixelFormat(fakeDC, &fakePFD);
 	if (fakePFDID != 0)
@@ -235,6 +239,16 @@ static BOOL InitializeGLFunctions(struct CustomData* customData)
 
 				customData->wglChoosePixelFormatARB = (PFNWGLCHOOSEPIXELFORMATARBPROC)wglGetProcAddress("wglChoosePixelFormatARB");
 				customData->wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
+
+				if (customData->wglChoosePixelFormatARB == NULL || customData->wglCreateContextAttribsARB == NULL)
+				{
+					customData->hOpenGL = LoadLibrary(TEXT("opengl32.dll"));
+					if (customData->hOpenGL != INVALID_HANDLE_VALUE)
+					{
+						customData->wglChoosePixelFormatARB = (PFNWGLCHOOSEPIXELFORMATARBPROC)GetProcAddress(customData->hOpenGL, "wglChoosePixelFormatARB");
+						customData->wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)GetProcAddress(customData->hOpenGL, "wglCreateContextAttribsARB");
+					}
+				}
 
 				success = TRUE;
 			}
@@ -345,6 +359,11 @@ int APIENTRY _tWinMain(
 
 	DeInitializeGL(customData->hRC, customData->hMemDC);
 	DeleteDIBSection32(customData->hMemDC, customData->hBitmap);
+
+	if (customData->hOpenGL)
+	{
+		FreeLibrary(customData->hOpenGL);
+	}
 
 	free(customData);
 
